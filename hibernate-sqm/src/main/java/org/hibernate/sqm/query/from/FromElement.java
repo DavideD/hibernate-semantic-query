@@ -6,8 +6,11 @@
  */
 package org.hibernate.sqm.query.from;
 
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.Bindable;
+import javax.persistence.metamodel.EntityType;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
 import org.hibernate.sqm.path.AttributePathPart;
 
 /**
@@ -15,10 +18,13 @@ import org.hibernate.sqm.path.AttributePathPart;
  */
 public interface FromElement extends AttributePathPart {
 	FromElementSpace getContainingSpace();
-	String getAlias();
-	TypeDescriptor getTypeDescriptor();
 
-	void addTreatedAs(TypeDescriptor typeDescriptor);
+	Bindable getBindableModelDescriptor();
+	String getAlias();
+
+	Attribute resolveAttribute(String attributeName);
+
+	void addTreatedAs(EntityType typeDescriptor);
 
 	<T> T accept(SemanticQueryWalker<T> walker);
 }

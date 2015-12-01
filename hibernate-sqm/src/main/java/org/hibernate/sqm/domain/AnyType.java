@@ -6,12 +6,12 @@
  */
 package org.hibernate.sqm.domain;
 
+import javax.persistence.metamodel.Type;
+
 /**
- * Information about the domain model space for the query.  This needs to come from the
- * consumer.
+ * Descriptor for a Hibernate ANY mapping
  *
  * @author Steve Ebersole
  */
-public interface ModelMetadata {
-	EntityTypeDescriptor resolveEntityReference(String reference);
+public interface AnyType extends Type {
 }

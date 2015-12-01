@@ -6,9 +6,9 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.CollectionTypeDescriptor;
-import org.hibernate.sqm.domain.TypeDescriptor;
 import org.hibernate.sqm.query.from.FromElement;
 
 /**
@@ -16,25 +16,28 @@ import org.hibernate.sqm.query.from.FromElement;
  */
 public class MapKeyFunction implements Expression {
 	private final String collectionAlias;
-	private final TypeDescriptor indexType;
+	private final Type indexType;
 
-	public MapKeyFunction(FromElement collectionReference) {
+	public MapKeyFunction(FromElement collectionReference, Type indexType) {
 		this.collectionAlias = collectionReference.getAlias();
-
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) collectionReference.getTypeDescriptor();
-		this.indexType = collectionTypeDescriptor.getIndexTypeDescriptor();
+		this.indexType = indexType;
 	}
 
 	public String getCollectionAlias() {
 		return collectionAlias;
 	}
 
-	public TypeDescriptor getMapKeyType() {
+	public Type getMapKeyType() {
 		return indexType;
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
+	public Type getTypeDescriptor() {
+		return getMapKeyType();
+	}
+
+	@Override
+	public Type getInferableType() {
 		return getMapKeyType();
 	}
 

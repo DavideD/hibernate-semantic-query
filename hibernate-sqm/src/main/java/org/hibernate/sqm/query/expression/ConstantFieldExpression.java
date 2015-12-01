@@ -6,9 +6,10 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.StandardBasicTypeDescriptors;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * Represents a constant that came from a static field reference.
@@ -19,13 +20,9 @@ import org.hibernate.sqm.domain.TypeDescriptor;
  */
 public class ConstantFieldExpression<T> implements ConstantExpression<T> {
 	private final T value;
-	private TypeDescriptor typeDescriptor;
+	private BasicType<T> typeDescriptor;
 
-	public ConstantFieldExpression(T value) {
-		this( value, StandardBasicTypeDescriptors.INSTANCE.standardDescriptorForType( value.getClass() ) );
-	}
-
-	public ConstantFieldExpression(T value, TypeDescriptor typeDescriptor) {
+	public ConstantFieldExpression(T value, BasicType<T> typeDescriptor) {
 		this.value = value;
 		this.typeDescriptor = typeDescriptor;
 	}
@@ -36,12 +33,31 @@ public class ConstantFieldExpression<T> implements ConstantExpression<T> {
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
+	public BasicType<T> getTypeDescriptor() {
 		return typeDescriptor;
 	}
 
 	@Override
-	public <T> T accept(SemanticQueryWalker<T> walker) {
+	public Type getInferableType() {
+		return getTypeDescriptor();
+	}
+
+	@Override
+	@SuppressWarnings("unchecked")
+	public void impliedType(Type type) {
+		if ( type != null ) {
+			if ( !BasicType.class.isAssignableFrom( type.getClass() ) ) {
+				throw new TypeInferenceException( "Inferred type descriptor [" + type + "] was not castable to javax.persistence.metamodel.BasicType" );
+			}
+			if ( !value.getClass().equals( type.getJavaType() ) ) {
+				throw new TypeInferenceException( "Inferred type [" + type.getJavaType() + "] was not convertible to " + value.getClass().getName() );
+			}
+			this.typeDescriptor = (BasicType<T>) type;
+		}
+	}
+
+	@Override
+	public <X> X accept(SemanticQueryWalker<X> walker) {
 		return walker.visitConstantFieldExpression( this );
 	}
 }

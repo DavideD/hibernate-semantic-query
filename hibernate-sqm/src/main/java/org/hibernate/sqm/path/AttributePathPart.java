@@ -6,7 +6,8 @@
  */
 package org.hibernate.sqm.path;
 
-import org.hibernate.sqm.domain.TypeDescriptor;
+import javax.persistence.metamodel.Bindable;
+
 import org.hibernate.sqm.query.from.FromElement;
 
 /**
@@ -22,7 +23,6 @@ import org.hibernate.sqm.query.from.FromElement;
  * @author Steve Ebersole
  */
 public interface AttributePathPart {
-	TypeDescriptor getTypeDescriptor();
-
+	Bindable getBindableModelDescriptor();
 	FromElement getUnderlyingFromElement();
 }

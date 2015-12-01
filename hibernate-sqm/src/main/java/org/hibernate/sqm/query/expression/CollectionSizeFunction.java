@@ -6,10 +6,11 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.AttributeDescriptor;
-import org.hibernate.sqm.domain.StandardBasicTypeDescriptors;
-import org.hibernate.sqm.domain.TypeDescriptor;
 import org.hibernate.sqm.query.from.FromElement;
 
 /**
@@ -19,26 +20,35 @@ import org.hibernate.sqm.query.from.FromElement;
  * @author Gunnar Morling
  */
 public class CollectionSizeFunction implements Expression {
-
 	private final String fromElementAlias;
-	private final AttributeDescriptor attributeDescriptor;
+	private final Attribute attributeDescriptor;
+	private final BasicType resultType;
 
-	public CollectionSizeFunction(FromElement fromElement, AttributeDescriptor attributeDescriptor) {
+	public CollectionSizeFunction(
+			FromElement fromElement,
+			Attribute attributeDescriptor,
+			BasicType resultType) {
 		this.fromElementAlias = fromElement.getAlias();
 		this.attributeDescriptor = attributeDescriptor;
+		this.resultType = resultType;
 	}
 
 	public String getFromElementAlias() {
 		return fromElementAlias;
 	}
 
-	public AttributeDescriptor getAttributeDescriptor() {
+	public Attribute getAttributeDescriptor() {
 		return attributeDescriptor;
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
-		return StandardBasicTypeDescriptors.INSTANCE.LONG;
+	public BasicType getTypeDescriptor() {
+		return resultType;
+	}
+
+	@Override
+	public Type getInferableType() {
+		return null;
 	}
 
 	@Override

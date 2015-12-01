@@ -6,6 +6,15 @@
  */
 package org.hibernate.query.parser.internal.hql.path;
 
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.Bindable;
+import javax.persistence.metamodel.EntityType;
+import javax.persistence.metamodel.ManagedType;
+import javax.persistence.metamodel.PluralAttribute;
+import javax.persistence.metamodel.SingularAttribute;
+import javax.persistence.metamodel.Type;
+
+import org.hibernate.query.parser.ParsingException;
 import org.hibernate.query.parser.internal.hql.antlr.HqlParser;
 import org.hibernate.query.parser.internal.FromElementBuilder;
 import org.hibernate.query.parser.internal.ParsingContext;
@@ -67,6 +76,6 @@ public class IndexedAttributeRootPathResolver extends AbstractAttributePathResol
 //		}
 
 		final FromElement lhs = resolveAnyIntermediateAttributePathJoins( source.getUnderlyingFromElement(), parts, 0 );
-		return new AttributeReferenceExpression( lhs, parts[parts.length-1] );
+		return makeAttributeReferenceExpression( lhs, parts[parts.length-1] );
 	}
 }

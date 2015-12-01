@@ -6,8 +6,9 @@
  */
 package org.hibernate.sqm.query.from;
 
+import javax.persistence.metamodel.Bindable;
+
 import org.hibernate.sqm.query.JoinType;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
@@ -18,9 +19,9 @@ public abstract class AbstractJoinedFromElement extends AbstractFromElement impl
 	public AbstractJoinedFromElement(
 			FromElementSpace fromElementSpace,
 			String alias,
-			TypeDescriptor typeDescriptor,
+			Bindable bindableModelDescriptor,
 			JoinType joinType) {
-		super( fromElementSpace, alias, typeDescriptor );
+		super( fromElementSpace, alias, bindableModelDescriptor );
 		this.joinType = joinType;
 	}
 

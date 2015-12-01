@@ -6,28 +6,34 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
  */
 public class PositionalParameterExpression implements ParameterExpression {
 	private final int position;
-	private TypeDescriptor typeDescriptor;
+	private Type typeDescriptor;
 
 	public PositionalParameterExpression(int position) {
 		this.position = position;
 	}
 
-	public PositionalParameterExpression(int position, TypeDescriptor typeDescriptor) {
+	public PositionalParameterExpression(int position, Type typeDescriptor) {
 		this.position = position;
 		this.typeDescriptor = typeDescriptor;
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
+	public Type getTypeDescriptor() {
 		return typeDescriptor;
+	}
+
+	@Override
+	public Type getInferableType() {
+		return null;
 	}
 
 	@Override
@@ -43,5 +49,12 @@ public class PositionalParameterExpression implements ParameterExpression {
 	@Override
 	public Integer getPosition() {
 		return position;
+	}
+
+	@Override
+	public void impliedType(Type type) {
+		if ( type != null ) {
+			this.typeDescriptor = type;
+		}
 	}
 }

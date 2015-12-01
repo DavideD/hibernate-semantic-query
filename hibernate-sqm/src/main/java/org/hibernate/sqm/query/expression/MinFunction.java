@@ -6,23 +6,27 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
  */
 public class MinFunction extends AbstractAggregateFunction implements AggregateFunction {
-	private final TypeDescriptor typeDescriptor;
-
-	public MinFunction(Expression argument, boolean distinct) {
-		super( argument, distinct );
-		typeDescriptor = argument.getTypeDescriptor();
+	public MinFunction(Expression argument, boolean distinct, BasicType resultType) {
+		super( argument, distinct, resultType );
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
-		return typeDescriptor;
+	public BasicType getTypeDescriptor() {
+		return (BasicType) super.getTypeDescriptor();
+	}
+
+	@Override
+	public Type getInferableType() {
+		return getTypeDescriptor();
 	}
 
 	@Override

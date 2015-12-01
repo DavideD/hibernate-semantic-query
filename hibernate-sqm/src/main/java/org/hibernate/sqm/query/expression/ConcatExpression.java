@@ -6,8 +6,11 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
+import org.hibernate.sqm.query.Helper;
 
 /**
  * @author Steve Ebersole
@@ -15,10 +18,16 @@ import org.hibernate.sqm.domain.TypeDescriptor;
 public class ConcatExpression implements Expression {
 	private final Expression lhsOperand;
 	private final Expression rhsOperand;
+	private final BasicType resultType;
 
 	public ConcatExpression(Expression lhsOperand, Expression rhsOperand) {
+		this( lhsOperand, rhsOperand, (BasicType) lhsOperand.getTypeDescriptor() );
+	}
+
+	public ConcatExpression(Expression lhsOperand, Expression rhsOperand, BasicType resultType) {
 		this.lhsOperand = lhsOperand;
 		this.rhsOperand = rhsOperand;
+		this.resultType = resultType;
 	}
 
 	public Expression getLeftHandOperand() {
@@ -30,9 +39,13 @@ public class ConcatExpression implements Expression {
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
-		// for now
-		return lhsOperand.getTypeDescriptor();
+	public BasicType getTypeDescriptor() {
+		return resultType;
+	}
+
+	@Override
+	public Type getInferableType() {
+		return Helper.firstNonNull( lhsOperand.getInferableType(), rhsOperand.getInferableType() ) ;
 	}
 
 	@Override

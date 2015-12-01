@@ -6,14 +6,13 @@
  */
 package org.hibernate.query.parser.internal.hql.path;
 
+import javax.persistence.metamodel.Attribute;
+
 import org.hibernate.query.parser.SemanticException;
 import org.hibernate.query.parser.internal.FromClauseIndex;
 import org.hibernate.query.parser.internal.FromElementBuilder;
 import org.hibernate.query.parser.internal.ParsingContext;
 import org.hibernate.query.parser.internal.hql.phase1.FromClauseStackNode;
-import org.hibernate.sqm.domain.AttributeDescriptor;
-import org.hibernate.sqm.domain.CollectionTypeDescriptor;
-import org.hibernate.sqm.domain.EntityTypeDescriptor;
 import org.hibernate.sqm.query.from.FromElement;
 import org.hibernate.sqm.query.from.QualifiedJoinedFromElement;
 
@@ -52,22 +51,26 @@ public class JoinPredicatePathResolverImpl extends BasicAttributePathResolverImp
 	}
 
 	@Override
-	protected void validateIntermediateAttributeJoin(
-			FromElement lhs,
-			AttributeDescriptor joinedAttributeDescriptor) {
-		if ( joinedAttributeDescriptor.getType() instanceof EntityTypeDescriptor ) {
-			throw new SemanticException(
-					"On-clause predicate of a qualified join cannot contain implicit entity joins : " +
-							joinedAttributeDescriptor.getName()
-			);
+	protected void validateIntermediateAttributeJoin(FromElement lhs, Attribute joinedAttribute) {
+		switch ( joinedAttribute.getPersistentAttributeType() ) {
+			case MANY_TO_ONE:
+			case ONE_TO_ONE: {
+				throw new SemanticException(
+						"On-clause predicate of a qualified join cannot contain implicit entity joins : " +
+								joinedAttribute.getName()
+				);
+			}
+			case ELEMENT_COLLECTION:
+			case MANY_TO_MANY:
+			case ONE_TO_MANY: {
+				throw new SemanticException(
+						"On-clause predicate of a qualified join cannot contain implicit collection joins : " +
+								joinedAttribute.getName()
+				);
+			}
+			default: {
+				super.validateIntermediateAttributeJoin( lhs, joinedAttribute );
+			}
 		}
-		else if ( joinedAttributeDescriptor.getType() instanceof CollectionTypeDescriptor ) {
-			throw new SemanticException(
-					"On-clause predicate of a qualified join cannot contain implicit collection joins : " +
-							joinedAttributeDescriptor.getName()
-			);
-		}
-
-		super.validateIntermediateAttributeJoin( lhs, joinedAttributeDescriptor );
 	}
 }

@@ -6,7 +6,10 @@
  */
 package org.hibernate.test.query.parser.hql;
 
+import javax.persistence.metamodel.Attribute;
+
 import org.hibernate.query.parser.SemanticQueryInterpreter;
+import org.hibernate.sqm.domain.ExtendedMetamodel;
 import org.hibernate.sqm.query.SelectStatement;
 import org.hibernate.sqm.query.expression.CollectionIndexFunction;
 import org.hibernate.sqm.query.expression.CollectionSizeFunction;
@@ -15,6 +18,9 @@ import org.hibernate.sqm.query.expression.MapKeyFunction;
 import org.hibernate.sqm.query.predicate.Predicate;
 import org.hibernate.sqm.query.predicate.RelationalPredicate;
 import org.hibernate.test.query.parser.ConsumerContextImpl;
+import org.hibernate.test.sqm.domain.EntityTypeImpl;
+import org.hibernate.test.sqm.domain.ExplicitModelMetadata;
+import org.hibernate.test.sqm.domain.StandardBasicTypeDescriptors;
 import org.junit.Test;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
@@ -28,7 +34,7 @@ import static org.junit.Assert.assertThat;
  */
 public class WhereClauseTests {
 
-	private final ConsumerContextImpl consumerContext = new ConsumerContextImpl();
+	private final ConsumerContextImpl consumerContext = new ConsumerContextImpl( buildMetamodel() );
 
 	@Test
 	public void testCollectionSizeFunction() {
@@ -75,10 +81,43 @@ public class WhereClauseTests {
 
 		assertThat( relationalPredicate.getLeftHandExpression(), instanceOf( MapKeyFunction.class ) );
 		assertThat( ( (MapKeyFunction) relationalPredicate.getLeftHandExpression() ).getCollectionAlias(), is( "l" ) );
-		assertThat( ( (MapKeyFunction) relationalPredicate.getLeftHandExpression() ).getMapKeyType().getTypeName(), is( "com.acme.map-key:mapLegs" ) );
+		assertThat( ( (MapKeyFunction) relationalPredicate.getLeftHandExpression() ).getMapKeyType().getJavaType().getName(), is( "java.lang.String" ) );
 	}
 
 	private SelectStatement interpret(String query) {
 		return (SelectStatement) SemanticQueryInterpreter.interpret( query, consumerContext );
+	}
+
+
+	private ExtendedMetamodel buildMetamodel() {
+		ExplicitModelMetadata metamodel = new ExplicitModelMetadata();
+
+		EntityTypeImpl legType = metamodel.makeEntityType( "com.acme.Leg" );
+		legType.makeSingularAttribute(
+				"basicName",
+				Attribute.PersistentAttributeType.BASIC,
+				StandardBasicTypeDescriptors.INSTANCE.STRING
+		);
+
+		EntityTypeImpl tripType = metamodel.makeEntityType( "com.acme.Trip" );
+
+		tripType.makeSetAttribute(
+				"basicCollection",
+				Attribute.PersistentAttributeType.ELEMENT_COLLECTION,
+				StandardBasicTypeDescriptors.INSTANCE.STRING
+		);
+		tripType.makeListAttribute(
+				"indexedCollectionLegs",
+				Attribute.PersistentAttributeType.ONE_TO_MANY,
+				legType
+		);
+		tripType.makeMapAttribute(
+				"mapLegs",
+				Attribute.PersistentAttributeType.ONE_TO_MANY,
+				StandardBasicTypeDescriptors.INSTANCE.STRING,
+				legType
+		);
+
+		return metamodel;
 	}
 }

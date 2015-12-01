@@ -6,8 +6,10 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.EntityType;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.EntityTypeDescriptor;
 
 /**
  * Represents an reference to an entity type
@@ -15,14 +17,19 @@ import org.hibernate.sqm.domain.EntityTypeDescriptor;
  * @author Steve Ebersole
  */
 public class EntityTypeExpression implements Expression {
-	private final EntityTypeDescriptor entityTypeDescriptor;
+	private final EntityType entityTypeDescriptor;
 
-	public EntityTypeExpression(EntityTypeDescriptor entityTypeDescriptor) {
+	public EntityTypeExpression(EntityType entityTypeDescriptor) {
 		this.entityTypeDescriptor = entityTypeDescriptor;
 	}
 
 	@Override
-	public EntityTypeDescriptor getTypeDescriptor() {
+	public EntityType getTypeDescriptor() {
+		return entityTypeDescriptor;
+	}
+
+	@Override
+	public Type getInferableType() {
 		return entityTypeDescriptor;
 	}
 

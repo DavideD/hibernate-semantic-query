@@ -6,17 +6,20 @@
  */
 package org.hibernate.sqm.query.from;
 
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.Bindable;
+import javax.persistence.metamodel.EntityType;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
  */
 public class TreatedFromElement implements FromElement {
 	private final FromElement wrapped;
-	private final TypeDescriptor treatedAs;
+	private final EntityType treatedAs;
 
-	public TreatedFromElement(FromElement wrapped, TypeDescriptor treatedAs) {
+	public TreatedFromElement(FromElement wrapped, EntityType treatedAs) {
 		this.wrapped = wrapped;
 		this.treatedAs = treatedAs;
 	}
@@ -36,17 +39,22 @@ public class TreatedFromElement implements FromElement {
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
+	public Bindable getBindableModelDescriptor() {
 		return treatedAs;
 	}
 
 	@Override
-	public void addTreatedAs(TypeDescriptor typeDescriptor) {
+	public Attribute resolveAttribute(String attributeName) {
+		return wrapped.resolveAttribute( attributeName );
+	}
+
+	@Override
+	public void addTreatedAs(EntityType typeDescriptor) {
 		wrapped.addTreatedAs( typeDescriptor );
 	}
 
-	public TypeDescriptor getBaseTypeDescriptor() {
-		return wrapped.getTypeDescriptor();
+	public Bindable getBaseBindableModelDescriptor() {
+		return wrapped.getBindableModelDescriptor();
 	}
 
 	@Override

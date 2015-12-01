@@ -6,10 +6,16 @@
  */
 package org.hibernate.test.query.parser.hql;
 
+import javax.persistence.metamodel.Attribute;
+
 import org.hibernate.query.parser.SemanticQueryInterpreter;
 import org.hibernate.query.parser.StrictJpaComplianceViolation;
+import org.hibernate.sqm.domain.ExtendedMetamodel;
 
 import org.hibernate.test.query.parser.ConsumerContextImpl;
+import org.hibernate.test.sqm.domain.EntityTypeImpl;
+import org.hibernate.test.sqm.domain.ExplicitModelMetadata;
+import org.hibernate.test.sqm.domain.StandardBasicTypeDescriptors;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -24,7 +30,7 @@ public class StrictJpqlComplianceTests {
 	@Test
 	public void testImplicitSelectClause() {
 		final String query = "from Entity";
-		ConsumerContextImpl consumerContext = new ConsumerContextImpl();
+		ConsumerContextImpl consumerContext = new ConsumerContextImpl( buildMetamodel() );
 
 		// first test HQL superset is allowed...
 		SemanticQueryInterpreter.interpret( "from Entity", consumerContext );
@@ -43,7 +49,7 @@ public class StrictJpqlComplianceTests {
 	@Test
 	public void testUnmappedPolymorphicReference() {
 		final String query = "select o from PolymorphicEntity o";
-		final ConsumerContextImpl consumerContext = new ConsumerContextImpl();
+		ConsumerContextImpl consumerContext = new ConsumerContextImpl( buildMetamodel() );
 
 		// first test HQL superset is allowed...
 		SemanticQueryInterpreter.interpret( query, consumerContext );
@@ -62,7 +68,7 @@ public class StrictJpqlComplianceTests {
 	@Test
 	public void testAliasedFetchJoin() {
 		final String query = "select o from Entity o join fetch o.entity e";
-		final ConsumerContextImpl consumerContext = new ConsumerContextImpl();
+		ConsumerContextImpl consumerContext = new ConsumerContextImpl( buildMetamodel() );
 
 		// first test HQL superset is allowed...
 		SemanticQueryInterpreter.interpret( query, consumerContext );
@@ -81,7 +87,7 @@ public class StrictJpqlComplianceTests {
 	@Test
 	public void testNonStandardFunctionCall() {
 		final String query = "select o from Entity o where my_func(o.basic) = 1";
-		final ConsumerContextImpl consumerContext = new ConsumerContextImpl();
+		ConsumerContextImpl consumerContext = new ConsumerContextImpl( buildMetamodel() );
 
 		// first test HQL superset is allowed...
 		SemanticQueryInterpreter.interpret( query, consumerContext );
@@ -95,5 +101,23 @@ public class StrictJpqlComplianceTests {
 		catch (StrictJpaComplianceViolation v) {
 			assertEquals( StrictJpaComplianceViolation.Type.FUNCTION_CALL , v.getType() );
 		}
+	}
+
+	private ExtendedMetamodel buildMetamodel() {
+		ExplicitModelMetadata metamodel = new ExplicitModelMetadata();
+		EntityTypeImpl entityType = metamodel.makeEntityType( "com.acme.Entity" );
+		entityType.makeSingularAttribute(
+				"basic",
+				Attribute.PersistentAttributeType.BASIC,
+				StandardBasicTypeDescriptors.INSTANCE.LONG
+		);
+		entityType.makeSingularAttribute(
+				"entity",
+				Attribute.PersistentAttributeType.MANY_TO_ONE,
+				entityType
+		);
+
+		metamodel.makePolymorphicEntity( "com.acme.PolymorphicEntity" );
+		return metamodel;
 	}
 }

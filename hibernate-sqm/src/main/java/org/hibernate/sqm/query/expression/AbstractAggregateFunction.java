@@ -6,16 +6,21 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Type;
+
 /**
  * @author Steve Ebersole
  */
 public abstract class AbstractAggregateFunction implements AggregateFunction {
 	private final Expression argument;
 	private final boolean distinct;
+	private final BasicType resultType;
 
-	public AbstractAggregateFunction(Expression argument, boolean distinct) {
+	public AbstractAggregateFunction(Expression argument, boolean distinct, BasicType resultType) {
 		this.argument = argument;
 		this.distinct = distinct;
+		this.resultType = resultType;
 	}
 
 	@Override
@@ -26,5 +31,10 @@ public abstract class AbstractAggregateFunction implements AggregateFunction {
 	@Override
 	public boolean isDistinct() {
 		return distinct;
+	}
+
+	@Override
+	public Type getTypeDescriptor() {
+		return resultType;
 	}
 }

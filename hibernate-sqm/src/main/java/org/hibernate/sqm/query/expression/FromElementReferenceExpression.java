@@ -6,8 +6,10 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.Bindable;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
 import org.hibernate.sqm.path.AttributePathPart;
 import org.hibernate.sqm.query.from.FromElement;
 
@@ -16,9 +18,11 @@ import org.hibernate.sqm.query.from.FromElement;
  */
 public class FromElementReferenceExpression implements AttributePathPart, Expression {
 	private final FromElement fromElement;
+	private final Type type;
 
-	public FromElementReferenceExpression(FromElement fromElement) {
+	public FromElementReferenceExpression(FromElement fromElement, Type type) {
 		this.fromElement = fromElement;
+		this.type = type;
 	}
 
 	public FromElement getFromElement() {
@@ -26,8 +30,18 @@ public class FromElementReferenceExpression implements AttributePathPart, Expres
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
-		return fromElement.getTypeDescriptor();
+	public Type getTypeDescriptor() {
+		return type;
+	}
+
+	@Override
+	public Type getInferableType() {
+		return getTypeDescriptor();
+	}
+
+	@Override
+	public Bindable getBindableModelDescriptor() {
+		return fromElement.getBindableModelDescriptor();
 	}
 
 	@Override

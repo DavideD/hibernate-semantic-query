@@ -6,12 +6,18 @@
  */
 package org.hibernate.test.query.parser.hql.dml;
 
+import javax.persistence.metamodel.Attribute;
+
 import org.hibernate.query.parser.SemanticQueryInterpreter;
+import org.hibernate.sqm.domain.ExtendedMetamodel;
 import org.hibernate.sqm.query.InsertSelectStatement;
 import org.hibernate.sqm.query.Statement;
 import org.hibernate.sqm.query.expression.AttributeReferenceExpression;
 
 import org.hibernate.test.query.parser.ConsumerContextImpl;
+import org.hibernate.test.sqm.domain.EntityTypeImpl;
+import org.hibernate.test.sqm.domain.ExplicitModelMetadata;
+import org.hibernate.test.sqm.domain.StandardBasicTypeDescriptors;
 import org.junit.Test;
 
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -29,7 +35,7 @@ public class BasicInsertTests {
 	}
 
 	private void basicInsertAssertions(String query) {
-		ConsumerContextImpl consumerContext = new ConsumerContextImpl();
+		ConsumerContextImpl consumerContext = new ConsumerContextImpl( buildMetamodel() );
 
 		final Statement statement = SemanticQueryInterpreter.interpret( query, consumerContext );
 
@@ -41,5 +47,30 @@ public class BasicInsertTests {
 		for ( AttributeReferenceExpression stateField : insertStatement.getStateFields() ) {
 			assertSame( insertStatement.getInsertTarget(), stateField.getUnderlyingFromElement() );
 		}
+	}
+
+	private ExtendedMetamodel buildMetamodel() {
+		ExplicitModelMetadata metamodel = new ExplicitModelMetadata();
+
+		EntityTypeImpl entity1Type = metamodel.makeEntityType( "com.acme.Entity1" );
+		entity1Type.makeSingularAttribute(
+				"basic1",
+				Attribute.PersistentAttributeType.BASIC,
+				StandardBasicTypeDescriptors.INSTANCE.STRING
+		);
+		entity1Type.makeSingularAttribute(
+				"basic2",
+				Attribute.PersistentAttributeType.BASIC,
+				StandardBasicTypeDescriptors.INSTANCE.LONG
+		);
+
+		EntityTypeImpl entity2Type = metamodel.makeEntityType( "com.acme.Entity2" );
+		entity2Type.makeSingularAttribute(
+				"basic2",
+				Attribute.PersistentAttributeType.BASIC,
+				StandardBasicTypeDescriptors.INSTANCE.LONG
+		);
+
+		return metamodel;
 	}
 }

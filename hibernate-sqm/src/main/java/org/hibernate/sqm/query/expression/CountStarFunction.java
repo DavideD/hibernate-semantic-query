@@ -6,21 +6,27 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.StandardBasicTypeDescriptors;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
  */
 public class CountStarFunction extends AbstractAggregateFunction {
-	public CountStarFunction(boolean distinct) {
-		super( STAR, distinct );
+	public CountStarFunction(boolean distinct, BasicType resultType) {
+		super( STAR, distinct, resultType );
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
-		return StandardBasicTypeDescriptors.INSTANCE.LONG;
+	public BasicType getTypeDescriptor() {
+		return (BasicType) super.getTypeDescriptor();
+	}
+
+	@Override
+	public BasicType getInferableType() {
+		return getTypeDescriptor();
 	}
 
 	@Override
@@ -30,7 +36,12 @@ public class CountStarFunction extends AbstractAggregateFunction {
 
 	private static Expression STAR = new Expression() {
 		@Override
-		public TypeDescriptor getTypeDescriptor() {
+		public Type getTypeDescriptor() {
+			return null;
+		}
+
+		@Override
+		public Type getInferableType() {
 			return null;
 		}
 

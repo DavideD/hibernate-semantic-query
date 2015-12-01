@@ -6,9 +6,11 @@
  */
 package org.hibernate.sqm.query.from;
 
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.EntityType;
+
 import org.hibernate.sqm.SemanticQueryWalker;
 import org.hibernate.sqm.query.JoinType;
-import org.hibernate.sqm.domain.EntityTypeDescriptor;
 import org.hibernate.sqm.query.predicate.Predicate;
 
 /**
@@ -24,10 +26,10 @@ public class QualifiedEntityJoinFromElement
 	public QualifiedEntityJoinFromElement(
 			FromElementSpace fromElementSpace,
 			String alias,
-			EntityTypeDescriptor entityTypeDescriptor,
+			EntityType joinedEntityDescriptor,
 			JoinType joinType) {
-		super( fromElementSpace, alias, entityTypeDescriptor, joinType );
-		this.entityName = entityTypeDescriptor.getTypeName();
+		super( fromElementSpace, alias, joinedEntityDescriptor, joinType );
+		this.entityName = joinedEntityDescriptor.getName();
 	}
 
 	public String getEntityName() {
@@ -35,8 +37,13 @@ public class QualifiedEntityJoinFromElement
 	}
 
 	@Override
-	public EntityTypeDescriptor getTypeDescriptor() {
-		return (EntityTypeDescriptor) super.getTypeDescriptor();
+	public EntityType getBindableModelDescriptor() {
+		return (EntityType) super.getBindableModelDescriptor();
+	}
+
+	@Override
+	public Attribute resolveAttribute(String attributeName) {
+		return getBindableModelDescriptor().getAttribute( attributeName );
 	}
 
 	@Override

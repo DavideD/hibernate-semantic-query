@@ -6,13 +6,14 @@
  */
 package org.hibernate.sqm.query.expression;
 
+import javax.persistence.metamodel.Type;
+
 import org.hibernate.sqm.SemanticQueryWalker;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
  */
-public class UnaryOperationExpression implements Expression {
+public class UnaryOperationExpression implements ImpliedTypeExpression {
 	public enum Operation {
 		PLUS,
 		MINUS
@@ -20,15 +21,36 @@ public class UnaryOperationExpression implements Expression {
 
 	private final Operation operation;
 	private final Expression operand;
+	private Type typeDescriptor;
 
-	public UnaryOperationExpression(Operation operation,Expression operand) {
+	public UnaryOperationExpression(Operation operation, Expression operand) {
+		this( operation, operand, operand.getTypeDescriptor() );
+	}
+
+	public UnaryOperationExpression(Operation operation, Expression operand, Type typeDescriptor) {
 		this.operation = operation;
 		this.operand = operand;
+		this.typeDescriptor = typeDescriptor;
 	}
 
 	@Override
-	public TypeDescriptor getTypeDescriptor() {
-		return getOperand().getTypeDescriptor();
+	public Type getTypeDescriptor() {
+		return typeDescriptor;
+	}
+
+	@Override
+	public Type getInferableType() {
+		return operand.getTypeDescriptor();
+	}
+
+	@Override
+	public void impliedType(Type type) {
+		if ( type != null ) {
+			this.typeDescriptor = type;
+			if ( operand instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) operand ).impliedType( type );
+			}
+		}
 	}
 
 	@Override

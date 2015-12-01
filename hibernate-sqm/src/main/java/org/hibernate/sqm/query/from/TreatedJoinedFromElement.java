@@ -6,14 +6,15 @@
  */
 package org.hibernate.sqm.query.from;
 
+import javax.persistence.metamodel.EntityType;
+
 import org.hibernate.sqm.query.JoinType;
-import org.hibernate.sqm.domain.TypeDescriptor;
 
 /**
  * @author Steve Ebersole
  */
 public class TreatedJoinedFromElement extends TreatedFromElement implements JoinedFromElement {
-	public TreatedJoinedFromElement(JoinedFromElement wrapped, TypeDescriptor treatedAs) {
+	public TreatedJoinedFromElement(JoinedFromElement wrapped, EntityType treatedAs) {
 		super( wrapped, treatedAs );
 	}
 

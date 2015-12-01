@@ -12,13 +12,22 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import javax.persistence.metamodel.BasicType;
+import javax.persistence.metamodel.Bindable;
+import javax.persistence.metamodel.EntityType;
+import javax.persistence.metamodel.MapAttribute;
+import javax.persistence.metamodel.PluralAttribute;
+import javax.persistence.metamodel.Type;
 
 import org.hibernate.query.parser.LiteralNumberFormatException;
 import org.hibernate.query.parser.ParsingException;
 import org.hibernate.query.parser.SemanticException;
 import org.hibernate.query.parser.StrictJpaComplianceViolation;
+import org.hibernate.query.parser.internal.ExpressionTypeHelper;
 import org.hibernate.query.parser.internal.FromClauseIndex;
 import org.hibernate.query.parser.internal.FromElementBuilder;
+import org.hibernate.query.parser.internal.Helper;
 import org.hibernate.query.parser.internal.ParsingContext;
 import org.hibernate.query.parser.internal.hql.antlr.HqlParser;
 import org.hibernate.query.parser.internal.hql.antlr.HqlParser.GroupByClauseContext;
@@ -28,10 +37,6 @@ import org.hibernate.query.parser.internal.hql.path.AttributePathResolver;
 import org.hibernate.query.parser.internal.hql.path.AttributePathResolverStack;
 import org.hibernate.query.parser.internal.hql.path.IndexedAttributeRootPathResolver;
 import org.hibernate.query.parser.internal.hql.phase1.FromClauseStackNode;
-import org.hibernate.sqm.domain.CollectionTypeDescriptor;
-import org.hibernate.sqm.domain.EntityTypeDescriptor;
-import org.hibernate.sqm.domain.MapTypeDescriptor;
-import org.hibernate.sqm.domain.TypeDescriptor;
 import org.hibernate.sqm.path.AttributePathPart;
 import org.hibernate.sqm.query.QuerySpec;
 import org.hibernate.sqm.query.SelectStatement;
@@ -52,6 +57,7 @@ import org.hibernate.sqm.query.expression.EntityTypeExpression;
 import org.hibernate.sqm.query.expression.Expression;
 import org.hibernate.sqm.query.expression.FromElementReferenceExpression;
 import org.hibernate.sqm.query.expression.FunctionExpression;
+import org.hibernate.sqm.query.expression.ImpliedTypeExpression;
 import org.hibernate.sqm.query.expression.IndexedAttributePathPart;
 import org.hibernate.sqm.query.expression.LiteralBigDecimalExpression;
 import org.hibernate.sqm.query.expression.LiteralBigIntegerExpression;
@@ -88,14 +94,14 @@ import org.hibernate.sqm.query.order.SortOrder;
 import org.hibernate.sqm.query.order.SortSpecification;
 import org.hibernate.sqm.query.predicate.AndPredicate;
 import org.hibernate.sqm.query.predicate.BetweenPredicate;
+import org.hibernate.sqm.query.predicate.EmptinessPredicate;
 import org.hibernate.sqm.query.predicate.GroupedPredicate;
 import org.hibernate.sqm.query.predicate.InSubQueryPredicate;
 import org.hibernate.sqm.query.predicate.InTupleListPredicate;
-import org.hibernate.sqm.query.predicate.EmptinessPredicate;
-import org.hibernate.sqm.query.predicate.NullnessPredicate;
 import org.hibernate.sqm.query.predicate.LikePredicate;
 import org.hibernate.sqm.query.predicate.MemberOfPredicate;
 import org.hibernate.sqm.query.predicate.NegatedPredicate;
+import org.hibernate.sqm.query.predicate.NullnessPredicate;
 import org.hibernate.sqm.query.predicate.OrPredicate;
 import org.hibernate.sqm.query.predicate.Predicate;
 import org.hibernate.sqm.query.predicate.RelationalPredicate;
@@ -104,6 +110,7 @@ import org.hibernate.sqm.query.select.DynamicInstantiation;
 import org.hibernate.sqm.query.select.DynamicInstantiationArgument;
 import org.hibernate.sqm.query.select.SelectClause;
 import org.hibernate.sqm.query.select.Selection;
+
 import org.jboss.logging.Logger;
 
 import org.antlr.v4.runtime.tree.TerminalNode;
@@ -235,10 +242,12 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		// the root and each non-fetched-join was selected.  For now, here, we simply
 		// select the root
 		final SelectClause selectClause = new SelectClause( true );
+		final FromElement root = fromClause.getFromElementSpaces().get( 0 ).getRoot();
 		selectClause.addSelection(
 				new Selection(
 						new FromElementReferenceExpression(
-								fromClause.getFromElementSpaces().get( 0 ).getRoot()
+								root,
+								Helper.toType( root.getBindableModelDescriptor() )
 						)
 				)
 		);
@@ -292,17 +301,21 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		final DynamicInstantiation dynamicInstantiation;
 
 		if ( ctx.dynamicInstantiationTarget().mapKeyword() != null ) {
-			dynamicInstantiation = DynamicInstantiation.forMapInstantiation();
+			final BasicType<Map> mapType = parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Map.class );
+			dynamicInstantiation = DynamicInstantiation.forMapInstantiation( mapType );
 		}
 		else if ( ctx.dynamicInstantiationTarget().listKeyword() != null ) {
-			dynamicInstantiation = DynamicInstantiation.forListInstantiation();
+			final BasicType<List> listType = parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( List.class );
+			dynamicInstantiation = DynamicInstantiation.forListInstantiation( listType );
 		}
 		else {
 			final String className = ctx.dynamicInstantiationTarget().dotIdentifierSequence().getText();
 			try {
-				dynamicInstantiation = DynamicInstantiation.forClassInstantiation(
+				final BasicType instantiationType = parsingContext.getConsumerContext().getDomainMetamodel().getBasicType(
 						parsingContext.getConsumerContext().classByName( className )
 				);
+
+				dynamicInstantiation = DynamicInstantiation.forClassInstantiation( instantiationType );
 			}
 			catch (ClassNotFoundException e) {
 				throw new SemanticException( "Unable to resolve class named for dynamic instantiation : " + className );
@@ -343,7 +356,7 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		if ( fromElement == null ) {
 			throw new SemanticException( "Unable to resolve alias [" +  alias + "] in selection [" + ctx.getText() + "]" );
 		}
-		return new FromElementReferenceExpression( fromElement );
+		return new FromElementReferenceExpression( fromElement, Helper.toType( fromElement.getBindableModelDescriptor() ) );
 	}
 
 	@Override
@@ -465,10 +478,40 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 
 	@Override
 	public Object visitBetweenPredicate(HqlParser.BetweenPredicateContext ctx) {
+		final Expression expression = (Expression) ctx.expression().get( 0 ).accept( this );
+		final Expression lowerBound = (Expression) ctx.expression().get( 1 ).accept( this );
+		final Expression upperBound = (Expression) ctx.expression().get( 2 ).accept( this );
+
+		if ( expression.getInferableType() != null ) {
+			if ( lowerBound instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) lowerBound ).impliedType( expression.getInferableType() );
+			}
+			if ( upperBound instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) upperBound ).impliedType( expression.getInferableType() );
+			}
+		}
+		else if ( lowerBound.getInferableType() != null ) {
+			if ( expression instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) expression ).impliedType( lowerBound.getInferableType() );
+			}
+			if ( upperBound instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) upperBound ).impliedType( lowerBound.getInferableType() );
+			}
+		}
+		else if ( upperBound.getInferableType() != null ) {
+			if ( expression instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) expression ).impliedType( upperBound.getInferableType() );
+			}
+			if ( lowerBound instanceof ImpliedTypeExpression ) {
+				( (ImpliedTypeExpression) lowerBound ).impliedType( upperBound.getInferableType() );
+			}
+		}
+
 		return new BetweenPredicate(
-				(Expression) ctx.expression().get( 0 ).accept( this ),
-				(Expression) ctx.expression().get( 1 ).accept( this ),
-				(Expression) ctx.expression().get( 2 ).accept( this )
+				expression,
+				lowerBound,
+				upperBound,
+				false
 		);
 	}
 
@@ -496,7 +539,7 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			throw new SemanticException( "Could not resolve path [" + ctx.path().getText() + "] as an attribute reference" );
 		}
 		final AttributeReferenceExpression attributeReference = (AttributeReferenceExpression) pathResolution;
-		if ( !CollectionTypeDescriptor.class.isInstance( attributeReference.getTypeDescriptor() ) ) {
+		if ( !PluralAttribute.class.isInstance( attributeReference.getAttributeDescriptor() ) ) {
 			throw new SemanticException( "Path argument to MEMBER OF must be a collection" );
 		}
 		return new MemberOfPredicate( attributeReference );
@@ -547,9 +590,15 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 
 		final String pathText = ctx.getText();
 
-		final EntityTypeDescriptor entityType = parsingContext.getConsumerContext().resolveEntityReference( pathText );
-		if ( entityType != null ) {
-			return new EntityTypeExpression( entityType );
+		try {
+			final EntityType entityType = parsingContext.getConsumerContext().getDomainMetamodel().entity(
+					parsingContext.getConsumerContext().getDomainMetamodel().resolveImportedName( pathText )
+			);
+			if ( entityType != null ) {
+				return new EntityTypeExpression( entityType );
+			}
+		}
+		catch (IllegalArgumentException ignore) {
 		}
 
 		// 5th level precedence : constant reference
@@ -575,7 +624,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			final Class clazz = parsingContext.getConsumerContext().classByName( className );
 			if ( clazz.isEnum() ) {
 				try {
-					return new ConstantEnumExpression( Enum.valueOf( clazz, fieldName ) );
+					return new ConstantEnumExpression(
+							Enum.valueOf( clazz, fieldName ),
+							parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( clazz )
+					);
 				}
 				catch (IllegalArgumentException e) {
 					throw new SemanticException( "Name [" + fieldName + "] does not represent an enum constant on enum class [" + className + "]" );
@@ -588,7 +640,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 						throw new SemanticException( "Field [" + fieldName + "] is not static on class [" + className + "]" );
 					}
 					field.setAccessible( true );
-					return new ConstantFieldExpression( field.get( null ) );
+					return new ConstantFieldExpression(
+							field.get( null ),
+							parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( field.getType() )
+					);
 				}
 				catch (NoSuchFieldException e) {
 					throw new SemanticException( "Name [" + fieldName + "] does not represent a field on class [" + className + "]", e );
@@ -613,11 +668,13 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			throw new SemanticException( "Could not resolve path [" + ctx.dotIdentifierSequence().get( 0 ).getText() + "] as base for TREAT-AS expression" );
 		}
 
-		final String treatAsName = ctx.dotIdentifierSequence().get( 1 ).getText();
-
-		final TypeDescriptor treatAsTypeDescriptor = parsingContext.getConsumerContext().resolveEntityReference(
-				treatAsName
-		);
+		final String rawTreatAsName = ctx.dotIdentifierSequence().get( 1 ).getText();
+		final String treatAsName = parsingContext.getConsumerContext()
+				.getDomainMetamodel()
+				.resolveImportedName( rawTreatAsName );
+		final EntityType treatAsTypeDescriptor = parsingContext.getConsumerContext()
+				.getDomainMetamodel()
+				.entity( treatAsName );
 		if ( treatAsTypeDescriptor == null ) {
 			throw new SemanticException( "TREAT-AS target type [" + treatAsName + "] did not reference an entity" );
 		}
@@ -642,19 +699,21 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		final Expression indexExpression = (Expression) ctx.expression().accept( this );
 
 		// the source TypeDescriptor needs to be an indexed collection for this to be valid...
-		if ( !CollectionTypeDescriptor.class.isInstance( indexSource.getTypeDescriptor() ) ) {
+		if ( indexSource.getBindableModelDescriptor().getBindableType() != Bindable.BindableType.PLURAL_ATTRIBUTE
+				|| !PluralAttribute.class.isInstance( indexSource.getBindableModelDescriptor() ) ) {
 			throw new SemanticException( "Index operator only valid for indexed collections (maps, lists, arrays) : " + indexSource );
 		}
 
-		final CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) indexSource.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
-			throw new SemanticException( "Index operator only valid for indexed collections (maps, lists, arrays) : " + indexSource );
-		}
-
+		final PluralAttribute pluralAttribute = (PluralAttribute) indexSource.getBindableModelDescriptor();
 		// todo : would be nice to validate the index's type against the Collection-index's type
 		// 		but that requires "compatible type checking" rather than TypeDescriptor sameness (long versus int, e.g)
 
-		final IndexedAttributePathPart indexedReference = new IndexedAttributePathPart( indexSource, indexExpression );
+		final IndexedAttributePathPart indexedReference = new IndexedAttributePathPart(
+				indexSource,
+				indexExpression,
+				// Ultimately the Type for this part is the same as the elements of the collection...
+				pluralAttribute.getElementType()
+		);
 
 		if ( ctx.path( 1 ) == null ) {
 			return indexedReference;
@@ -694,10 +753,19 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		if ( ctx.expression().size() != 2 ) {
 			throw new ParsingException( "Expecting 2 operands to the + operator" );
 		}
+
+		final Expression firstOperand = (Expression) ctx.expression( 0 ).accept( this );
+		final Expression secondOperand = (Expression) ctx.expression( 1 ).accept( this );
 		return new BinaryArithmeticExpression(
 				BinaryArithmeticExpression.Operation.ADD,
-				(Expression) ctx.expression( 0 ).accept( this ),
-				(Expression) ctx.expression( 1 ).accept( this )
+				firstOperand,
+				secondOperand,
+				ExpressionTypeHelper.resolveArithmeticType(
+						(BasicType) firstOperand.getTypeDescriptor(),
+						(BasicType) secondOperand.getTypeDescriptor(),
+						parsingContext.getConsumerContext(),
+						false
+				)
 		);
 	}
 
@@ -706,10 +774,19 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		if ( ctx.expression().size() != 2 ) {
 			throw new ParsingException( "Expecting 2 operands to the - operator" );
 		}
+
+		final Expression firstOperand = (Expression) ctx.expression( 0 ).accept( this );
+		final Expression secondOperand = (Expression) ctx.expression( 1 ).accept( this );
 		return new BinaryArithmeticExpression(
 				BinaryArithmeticExpression.Operation.SUBTRACT,
-				(Expression) ctx.expression( 0 ).accept( this ),
-				(Expression) ctx.expression( 1 ).accept( this )
+				firstOperand,
+				secondOperand,
+				ExpressionTypeHelper.resolveArithmeticType(
+						(BasicType) firstOperand.getTypeDescriptor(),
+						(BasicType) secondOperand.getTypeDescriptor(),
+						parsingContext.getConsumerContext(),
+						false
+				)
 		);
 	}
 
@@ -718,10 +795,19 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		if ( ctx.expression().size() != 2 ) {
 			throw new ParsingException( "Expecting 2 operands to the * operator" );
 		}
+
+		final Expression firstOperand = (Expression) ctx.expression( 0 ).accept( this );
+		final Expression secondOperand = (Expression) ctx.expression( 1 ).accept( this );
 		return new BinaryArithmeticExpression(
 				BinaryArithmeticExpression.Operation.MULTIPLY,
-				(Expression) ctx.expression( 0 ).accept( this ),
-				(Expression) ctx.expression( 1 ).accept( this )
+				firstOperand,
+				secondOperand,
+				ExpressionTypeHelper.resolveArithmeticType(
+						(BasicType) firstOperand.getTypeDescriptor(),
+						(BasicType) secondOperand.getTypeDescriptor(),
+						parsingContext.getConsumerContext(),
+						false
+				)
 		);
 	}
 
@@ -730,10 +816,19 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		if ( ctx.expression().size() != 2 ) {
 			throw new ParsingException( "Expecting 2 operands to the / operator" );
 		}
+
+		final Expression firstOperand = (Expression) ctx.expression( 0 ).accept( this );
+		final Expression secondOperand = (Expression) ctx.expression( 1 ).accept( this );
 		return new BinaryArithmeticExpression(
 				BinaryArithmeticExpression.Operation.DIVIDE,
-				(Expression) ctx.expression( 0 ).accept( this ),
-				(Expression) ctx.expression( 1 ).accept( this )
+				firstOperand,
+				secondOperand,
+				ExpressionTypeHelper.resolveArithmeticType(
+						(BasicType) firstOperand.getTypeDescriptor(),
+						(BasicType) secondOperand.getTypeDescriptor(),
+						parsingContext.getConsumerContext(),
+						true
+				)
 		);
 	}
 
@@ -742,10 +837,19 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		if ( ctx.expression().size() != 2 ) {
 			throw new ParsingException( "Expecting 2 operands to the % operator" );
 		}
+
+		final Expression firstOperand = (Expression) ctx.expression( 0 ).accept( this );
+		final Expression secondOperand = (Expression) ctx.expression( 1 ).accept( this );
 		return new BinaryArithmeticExpression(
 				BinaryArithmeticExpression.Operation.MODULO,
-				(Expression) ctx.expression( 0 ).accept( this ),
-				(Expression) ctx.expression( 1 ).accept( this )
+				firstOperand,
+				secondOperand,
+				ExpressionTypeHelper.resolveArithmeticType(
+						(BasicType) firstOperand.getTypeDescriptor(),
+						(BasicType) secondOperand.getTypeDescriptor(),
+						parsingContext.getConsumerContext(),
+						false
+				)
 		);
 	}
 
@@ -769,15 +873,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 	@SuppressWarnings("UnnecessaryBoxing")
 	public LiteralExpression visitLiteralExpression(HqlParser.LiteralExpressionContext ctx) {
 		if ( ctx.literal().CHARACTER_LITERAL() != null ) {
-			final String text = ctx.literal().CHARACTER_LITERAL().getText();
-			if ( text.length() > 1 ) {
-				// todo : or just treat it as a String literal?
-				throw new ParsingException( "Value for CHARACTER_LITERAL token was more than 1 character" );
-			}
-			return new LiteralCharacterExpression( Character.valueOf( text.charAt( 0 ) ) );
+			return characterLiteral( ctx.literal().CHARACTER_LITERAL().getText() );
 		}
 		else if ( ctx.literal().STRING_LITERAL() != null ) {
-			return new LiteralStringExpression( ctx.literal().STRING_LITERAL().getText() );
+			return stringLiteral( ctx.literal().STRING_LITERAL().getText() );
 		}
 		else if ( ctx.literal().INTEGER_LITERAL() != null ) {
 			return integerLiteral( ctx.literal().INTEGER_LITERAL().getText() );
@@ -816,10 +915,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			return bigDecimalLiteral( ctx.literal().BIG_DECIMAL_LITERAL().getText() );
 		}
 		else if ( ctx.literal().FALSE() != null ) {
-			return new LiteralFalseExpression();
+			booleanLiteral( false );
 		}
 		else if ( ctx.literal().TRUE() != null ) {
-			return new LiteralTrueExpression();
+			booleanLiteral( true );
 		}
 		else if ( ctx.literal().NULL() != null ) {
 			return new LiteralNullExpression();
@@ -829,10 +928,39 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		throw new ParsingException( "Unexpected literal expression type [" + ctx.getText() + "]" );
 	}
 
+	private LiteralExpression<Boolean> booleanLiteral(boolean value) {
+		final BasicType<Boolean> type = parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Boolean.class );
+
+		return value
+				? new LiteralTrueExpression( type )
+				: new LiteralFalseExpression( type );
+	}
+
+	private LiteralCharacterExpression characterLiteral(String text) {
+		if ( text.length() > 1 ) {
+			// todo : or just treat it as a String literal?
+			throw new ParsingException( "Value for CHARACTER_LITERAL token was more than 1 character" );
+		}
+		return new LiteralCharacterExpression(
+				text.charAt( 0 ),
+				parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Character.class )
+		);
+	}
+
+	private LiteralExpression stringLiteral(String text) {
+		return new LiteralStringExpression(
+				text,
+				parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( String.class )
+		);
+	}
+
 	protected LiteralIntegerExpression integerLiteral(String text) {
 		try {
 			final Integer value = Integer.valueOf( text );
-			return new LiteralIntegerExpression( value );
+			return new LiteralIntegerExpression(
+					value,
+					parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Integer.class )
+			);
 		}
 		catch (NumberFormatException e) {
 			throw new LiteralNumberFormatException(
@@ -849,7 +977,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 				text = text.substring( 0, text.length() - 1 );
 			}
 			final Long value = Long.valueOf( text );
-			return new LiteralLongExpression( value );
+			return new LiteralLongExpression(
+					value,
+					parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Long.class )
+			);
 		}
 		catch (NumberFormatException e) {
 			throw new LiteralNumberFormatException(
@@ -865,7 +996,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			if ( text.endsWith( "bi" ) || text.endsWith( "BI" ) ) {
 				text = text.substring( 0, text.length() - 2 );
 			}
-			return new LiteralBigIntegerExpression( new BigInteger( text ) );
+			return new LiteralBigIntegerExpression(
+					new BigInteger( text ),
+					parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( BigInteger.class )
+			);
 		}
 		catch (NumberFormatException e) {
 			throw new LiteralNumberFormatException(
@@ -877,7 +1011,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 
 	protected LiteralFloatExpression floatLiteral(String text) {
 		try {
-			return new LiteralFloatExpression( Float.valueOf( text ) );
+			return new LiteralFloatExpression(
+					Float.valueOf( text ),
+					parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Float.class )
+			);
 		}
 		catch (NumberFormatException e) {
 			throw new LiteralNumberFormatException(
@@ -889,7 +1026,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 
 	protected LiteralDoubleExpression doubleLiteral(String text) {
 		try {
-			return new LiteralDoubleExpression( Double.valueOf( text ) );
+			return new LiteralDoubleExpression(
+					Double.valueOf( text ),
+					parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Double.class )
+			);
 		}
 		catch (NumberFormatException e) {
 			throw new LiteralNumberFormatException(
@@ -905,7 +1045,10 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			if ( text.endsWith( "bd" ) || text.endsWith( "BD" ) ) {
 				text = text.substring( 0, text.length() - 2 );
 			}
-			return new LiteralBigDecimalExpression( new BigDecimal( text ) );
+			return new LiteralBigDecimalExpression(
+					new BigDecimal( text ),
+					parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( BigDecimal.class )
+			);
 		}
 		catch (NumberFormatException e) {
 			throw new LiteralNumberFormatException(
@@ -944,7 +1087,7 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		final List<Expression> functionArguments = visitNonStandardFunctionArguments( ctx.nonStandardFunctionArguments() );
 
 		// todo : integrate some form of SqlFunction look-up using the ParsingContext so we can resolve the "type"
-		return new FunctionExpression( functionName, functionArguments, null );
+		return new FunctionExpression( functionName, null, functionArguments );
 	}
 
 	@Override
@@ -965,46 +1108,59 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 
 	@Override
 	public AvgFunction visitAvgFunction(HqlParser.AvgFunctionContext ctx) {
+		final Expression expr = (Expression) ctx.expression().accept( this );
 		return new AvgFunction(
-				(Expression) ctx.expression().accept( this ),
-				ctx.distinctKeyword() != null
+				expr,
+				ctx.distinctKeyword() != null,
+				(BasicType) expr.getTypeDescriptor()
 		);
 	}
 
 	@Override
 	public AggregateFunction visitCountFunction(HqlParser.CountFunctionContext ctx) {
+		final BasicType longType = parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Long.class );
 		if ( ctx.ASTERISK() != null ) {
-			return new CountStarFunction( ctx.distinctKeyword() != null );
+			return new CountStarFunction( ctx.distinctKeyword() != null, longType );
 		}
 		else {
 			return new CountFunction(
 					(Expression) ctx.expression().accept( this ),
-					ctx.distinctKeyword() != null
+					ctx.distinctKeyword() != null,
+					longType
 			);
 		}
 	}
 
 	@Override
 	public MaxFunction visitMaxFunction(HqlParser.MaxFunctionContext ctx) {
+		final Expression expr = (Expression) ctx.expression().accept( this );
 		return new MaxFunction(
-				(Expression) ctx.expression().accept( this ),
-				ctx.distinctKeyword() != null
+				expr,
+				ctx.distinctKeyword() != null,
+				(BasicType) expr.getTypeDescriptor()
 		);
 	}
 
 	@Override
 	public MinFunction visitMinFunction(HqlParser.MinFunctionContext ctx) {
+		final Expression expr = (Expression) ctx.expression().accept( this );
 		return new MinFunction(
-				(Expression) ctx.expression().accept( this ),
-				ctx.distinctKeyword() != null
+				expr,
+				ctx.distinctKeyword() != null,
+				(BasicType) expr.getTypeDescriptor()
 		);
 	}
 
 	@Override
 	public SumFunction visitSumFunction(HqlParser.SumFunctionContext ctx) {
+		final Expression expr = (Expression) ctx.expression().accept( this );
 		return new SumFunction(
-				(Expression) ctx.expression().accept( this ),
-				ctx.distinctKeyword() != null
+				expr,
+				ctx.distinctKeyword() != null,
+				ExpressionTypeHelper.resolveSingleNumericType(
+						(BasicType) expr.getTypeDescriptor(),
+						parsingContext.getConsumerContext()
+				)
 		);
 	}
 
@@ -1019,17 +1175,18 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 			);
 		}
 
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+		if ( pathResolution.getBindableModelDescriptor().getBindableType() != Bindable.BindableType.PLURAL_ATTRIBUTE ) {
 			throw new SemanticException(
 					"size() function can only be applied to path expressions which resolve to a collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
+							"path [" + ctx.path().getText() + "] resolved to " + pathResolution
 			);
 		}
 
 		// TODO avoid down-cast
 		return new CollectionSizeFunction(
 				pathResolution.getUnderlyingFromElement(),
-				( (AttributeReferenceExpression) pathResolution ).getAttributeDescriptor()
+				( (AttributeReferenceExpression) pathResolution ).getAttributeDescriptor(),
+				parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Long.class )
 		);
 	}
 
@@ -1038,23 +1195,24 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		final AttributePathPart pathResolution = (AttributePathPart) ctx.path().accept( this );
 
 		if ( getParsingContext().getConsumerContext().useStrictJpaCompliance() ) {
-
-			if ( !MapTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+			if ( !MapAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
 				throw new StrictJpaComplianceViolation(
 						"Encountered application of value() function to path expression which does not resolve to a persistent Map, but strict JPQL compliance was requested. specified "
-								+ "path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getTypeName(),
-						StrictJpaComplianceViolation.Type.VALUE_FUNCTION_ON_NON_MAP );
+								+ "path [" + ctx.path().getText() + "] resolved to " + pathResolution.getBindableModelDescriptor(),
+						StrictJpaComplianceViolation.Type.VALUE_FUNCTION_ON_NON_MAP
+				);
 			}
 		}
 
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+		if ( !PluralAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
 			throw new SemanticException(
 					"value() function can only be applied to path expressions which resolve to a collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
+							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getBindableModelDescriptor()
 			);
 		}
 
-		return new CollectionValueFunction( pathResolution.getUnderlyingFromElement() );
+		final PluralAttribute collectionReference = (PluralAttribute) pathResolution.getBindableModelDescriptor();
+		return new CollectionValueFunction( pathResolution.getUnderlyingFromElement(), collectionReference.getElementType() );
 	}
 
 	@Override
@@ -1062,44 +1220,46 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		final String alias = ctx.IDENTIFIER().getText();
 		final FromElement fromElement = getFromElementBuilder().getAliasRegistry().findFromElementByAlias( alias );
 
-		if ( !CollectionTypeDescriptor.class.isInstance( fromElement.getTypeDescriptor() ) ) {
+		if ( !PluralAttribute.class.isInstance( fromElement.getBindableModelDescriptor() ) ) {
 			throw new SemanticException(
 					"index() function can only be applied to identification variables which resolve to a collection; specified " +
-							"identification variable [" + alias + "] resolved to " + fromElement.getTypeDescriptor().getClass().getName()
+							"identification variable [" + alias + "] resolved to " + fromElement.getBindableModelDescriptor()
 			);
 		}
 
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) fromElement.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
+		final PluralAttribute collectionDescriptor = (PluralAttribute) fromElement.getBindableModelDescriptor();
+		final Type indexType;
+		if ( collectionDescriptor.getCollectionType() == PluralAttribute.CollectionType.MAP ) {
+			indexType = ( (MapAttribute) collectionDescriptor ).getKeyType();
+		}
+		else if ( collectionDescriptor.getCollectionType() == PluralAttribute.CollectionType.LIST ) {
+			// todo : this is the best we can do with the JPA model; in the Hibernate model this could be a custom type
+			indexType = parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Integer.class );
+		}
+		else {
 			throw new SemanticException(
-					"index() function can only be applied to identification variables which resolve to an indexed collection; specified " +
-							"identification variable [" + alias + "] resolved to " + fromElement.getTypeDescriptor().getClass().getName()
+					"index() function can only be applied to identification variables which resolve to an " +
+							"indexed collection (map,list); specified identification variable [" + alias +
+							"] resolved to " + collectionDescriptor
 			);
 		}
 
-		return new CollectionIndexFunction( fromElement );
+		return new CollectionIndexFunction( fromElement, indexType );
 	}
 
 	@Override
 	public MapKeyFunction visitMapKeyFunction(HqlParser.MapKeyFunctionContext ctx) {
 		final AttributePathPart pathResolution = (AttributePathPart) ctx.path().accept( this );
 
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+		if ( !MapAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
 			throw new SemanticException(
-					"key() function can only be applied to path expressions which resolve to a persistent Map; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
+					"key() function can only be applied to path expressions which resolve to a persistent Map; " +
+							"specified path [" + ctx.path().getText() + "] resolved to " + pathResolution.getBindableModelDescriptor()
 			);
 		}
 
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) pathResolution.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
-			throw new SemanticException(
-					"key() function can only be applied to path expressions which resolve to a persistent Map; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
-		}
-
-		return new MapKeyFunction( pathResolution.getUnderlyingFromElement() );
+		final MapAttribute mapAttribute = (MapAttribute) pathResolution.getBindableModelDescriptor();
+		return new MapKeyFunction( pathResolution.getUnderlyingFromElement(), mapAttribute.getKeyType() );
 	}
 
 
@@ -1113,13 +1273,19 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 							+ "path [" + ctx.path().getText() + "] is used in WHERE clause" );
 		}
 
-		if ( !MapTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+		if ( !MapAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
 			throw new SemanticException(
 					"entry() function can only be applied to path expressions which resolve to a persistent Map; specified "
-							+ "path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getTypeName() );
+							+ "path [" + ctx.path().getText() + "] resolved to " + pathResolution.getBindableModelDescriptor()
+			);
 		}
 
-		return new MapEntryFunction( pathResolution.getUnderlyingFromElement() );
+		final MapAttribute mapAttribute = (MapAttribute) pathResolution.getBindableModelDescriptor();
+		return new MapEntryFunction(
+				pathResolution.getUnderlyingFromElement(),
+				mapAttribute.getKeyType(),
+				mapAttribute.getElementType()
+		);
 	}
 
 	@Override
@@ -1130,22 +1296,16 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 
 		final AttributePathPart pathResolution = (AttributePathPart) ctx.path().accept( this );
 
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+		if ( !PluralAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
 			throw new SemanticException(
-					"maxelement() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
+					"maxelement() function can only be applied to path expressions which resolve to a " +
+							"collection; specified path [" + ctx.path().getText() +
+							"] resolved to " + pathResolution.getBindableModelDescriptor()
 			);
 		}
 
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) pathResolution.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
-			throw new SemanticException(
-					"maxelement() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
-		}
-
-		return new MaxElementFunction( pathResolution.getUnderlyingFromElement() );
+		final PluralAttribute pluralAttribute = (PluralAttribute) pathResolution.getBindableModelDescriptor();
+		return new MaxElementFunction( pathResolution.getUnderlyingFromElement(), pluralAttribute.getElementType() );
 	}
 
 	@Override
@@ -1155,23 +1315,16 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		}
 
 		final AttributePathPart pathResolution = (AttributePathPart) ctx.path().accept( this );
-
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
+		if ( !PluralAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
 			throw new SemanticException(
-					"minelement() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
+					"minelement() function can only be applied to path expressions which resolve to a " +
+							"collection; specified path [" + ctx.path().getText() + "] resolved to "
+							+ pathResolution.getBindableModelDescriptor()
 			);
 		}
 
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) pathResolution.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
-			throw new SemanticException(
-					"minelement() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
-		}
-
-		return new MinElementFunction( pathResolution.getUnderlyingFromElement() );
+		final PluralAttribute pluralAttribute = (PluralAttribute) pathResolution.getBindableModelDescriptor();
+		return new MinElementFunction( pathResolution.getUnderlyingFromElement(), pluralAttribute.getElementType() );
 	}
 
 	@Override
@@ -1181,23 +1334,28 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		}
 
 		final AttributePathPart pathResolution = (AttributePathPart) ctx.path().accept( this );
-
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
-			throw new SemanticException(
-					"maxindex() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
+		if ( PluralAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
+			final PluralAttribute pluralAttribute = (PluralAttribute) pathResolution.getBindableModelDescriptor();
+			if ( pluralAttribute.getCollectionType() == PluralAttribute.CollectionType.LIST ) {
+				return new MaxIndexFunction(
+						pathResolution.getUnderlyingFromElement(),
+						// todo : again, best we can do given the JPA model
+						parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Integer.class )
+				);
+			}
+			else if ( pluralAttribute.getCollectionType() == PluralAttribute.CollectionType.MAP ) {
+				return new MaxIndexFunction(
+						pathResolution.getUnderlyingFromElement(),
+						( (MapAttribute) pluralAttribute ).getKeyType()
+				);
+			}
 		}
 
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) pathResolution.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
-			throw new SemanticException(
-					"maxindex() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
-		}
-
-		return new MaxIndexFunction( pathResolution.getUnderlyingFromElement() );
+		throw new SemanticException(
+				"maxindex() function can only be applied to path expressions which resolve to an " +
+						"indexed collection (list,map); specified path [" + ctx.path().getText() +
+						"] resolved to " + pathResolution.getBindableModelDescriptor()
+		);
 	}
 
 	@Override
@@ -1207,27 +1365,42 @@ public abstract class AbstractHqlParseTreeVisitor extends HqlParserBaseVisitor {
 		}
 
 		final AttributePathPart pathResolution = (AttributePathPart) ctx.path().accept( this );
-
-		if ( !CollectionTypeDescriptor.class.isInstance( pathResolution.getTypeDescriptor() ) ) {
-			throw new SemanticException(
-					"minindex() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
+		if ( PluralAttribute.class.isInstance( pathResolution.getBindableModelDescriptor() ) ) {
+			final PluralAttribute pluralAttribute = (PluralAttribute) pathResolution.getBindableModelDescriptor();
+			if ( pluralAttribute.getCollectionType() == PluralAttribute.CollectionType.LIST ) {
+				return new MinIndexFunction(
+						pathResolution.getUnderlyingFromElement(),
+						// todo : again, best we can do given the JPA model
+						parsingContext.getConsumerContext().getDomainMetamodel().getBasicType( Integer.class )
+				);
+			}
+			else if ( pluralAttribute.getCollectionType() == PluralAttribute.CollectionType.MAP ) {
+				return new MinIndexFunction(
+						pathResolution.getUnderlyingFromElement(),
+						( (MapAttribute) pluralAttribute ).getKeyType()
+				);
+			}
 		}
 
-		CollectionTypeDescriptor collectionTypeDescriptor = (CollectionTypeDescriptor) pathResolution.getTypeDescriptor();
-		if ( collectionTypeDescriptor.getIndexTypeDescriptor() == null ) {
-			throw new SemanticException(
-					"minindex() function can only be applied to path expressions which resolve to an indexed collection; specified " +
-							"path [" + ctx.path().getText() + "] resolved to " + pathResolution.getTypeDescriptor().getClass().getName()
-			);
-		}
-
-		return new MinIndexFunction( pathResolution.getUnderlyingFromElement() );
+		throw new SemanticException(
+				"minindex() function can only be applied to path expressions which resolve to an " +
+						"indexed collection (list,map); specified path [" + ctx.path().getText() +
+						"] resolved to " + pathResolution.getBindableModelDescriptor()
+		);
 	}
 
 	@Override
 	public SubQueryExpression visitSubQueryExpression(HqlParser.SubQueryExpressionContext ctx) {
-		return new SubQueryExpression( visitQuerySpec( ctx.querySpec() ) );
+		final QuerySpec querySpec = visitQuerySpec( ctx.querySpec() );
+		return new SubQueryExpression( querySpec, determineTypeDescriptor( querySpec.getSelectClause() ) );
+	}
+
+	private static Type determineTypeDescriptor(SelectClause selectClause) {
+		if ( selectClause.getSelections().size() != 0 ) {
+			return null;
+		}
+
+		final Selection selection = selectClause.getSelections().get( 0 );
+		return selection.getExpression().getTypeDescriptor();
 	}
 }
